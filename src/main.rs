@@ -12,7 +12,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 use unicode_width::UnicodeWidthStr;
@@ -26,16 +26,17 @@ enum InputMode {
     Editing,
 }
 
+const MAX_INPUT_COUNT: i8 = 2;
+const INPUT_TITLE_INDEX: i8 = 0;
+const INPUT_DESCRIPTION_INDEX: i8 = 1;
+
 /// App holds the state of the application
 struct AppState {
-    /// Current value of the input box
     title_input: String,
     description_input: String,
-    /// Current input mode
+    focused_input_index: i8,
     input_mode: InputMode,
-    /// History of recorded messages
     messages: Vec<Snippet>,
-    /// The state of the table
     table_state: TableState,
 }
 
@@ -74,6 +75,7 @@ impl Default for AppState {
         AppState {
             title_input: String::new(),
             description_input: String::new(),
+            focused_input_index: INPUT_TITLE_INDEX,
             input_mode: InputMode::Normal,
             table_state: TableState::default(),
             messages: Vec::new(),
@@ -82,7 +84,6 @@ impl Default for AppState {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -117,6 +118,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: AppState) -> io::Res
             match app.input_mode {
                 InputMode::Normal => match key.code {
                     KeyCode::Char('e') => {
+                        app.focused_input_index = INPUT_TITLE_INDEX;
                         app.input_mode = InputMode::Editing;
                     }
                     KeyCode::Char('c') => {
@@ -149,16 +151,36 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: AppState) -> io::Res
                     _ => {}
                 },
                 InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
+                    KeyCode::Tab => {
+                        app.focused_input_index = (app.focused_input_index + 1) % MAX_INPUT_COUNT
+                    }
                     KeyCode::Enter => {
-                        let snippet = Snippet {
-                            title: app.title_input.clone(),
-                            description: app.title_input.clone(), // TODO: Collect user input for this
-                        };
+                        // If we are not on the last field, enter moves to the next field
+                        if app.focused_input_index == MAX_INPUT_COUNT - 1 {
+                            // Last field index
+                            let snippet = Snippet {
+                                title: app.title_input.clone(),
+                                description: app.description_input.clone(),
+                            };
 
-                        app.messages.push(snippet);
+                            app.messages.push(snippet);
+
+                            app.title_input.clear();
+                            app.description_input.clear();
+
+                            app.input_mode = InputMode::Normal;
+                        } else {
+                            // Not the last field
+                            // Move to next field
+                            app.focused_input_index = (app.focused_input_index + 1) % MAX_INPUT_COUNT
+                        }
                     }
                     KeyCode::Char(c) => {
-                        app.title_input.push(c);
+                        match app.focused_input_index {
+                            INPUT_TITLE_INDEX => app.title_input.push(c),
+                            INPUT_DESCRIPTION_INDEX => app.description_input.push(c),
+                            _ => {}
+                        };
                     }
                     KeyCode::Backspace => {
                         app.title_input.pop();
@@ -186,7 +208,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut AppState) {
         .constraints(
             [
                 Constraint::Length(1),
-                Constraint::Length(3),
+                Constraint::Length(6),
                 Constraint::Min(1),
             ]
             .as_ref(),
@@ -220,26 +242,54 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut AppState) {
     let help_message = Paragraph::new(text);
     f.render_widget(help_message, chunks[0]);
 
-    let input = Paragraph::new(app.title_input.as_ref())
-        .style(match app.input_mode {
-            InputMode::Normal => Style::default(),
-            InputMode::Editing => Style::default().fg(Color::Yellow),
+    // Split remaining chunk
+    let inner_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+        .split(chunks[1]);
+
+    // Render the title input
+    let title_input = Paragraph::new(app.title_input.as_ref())
+        .style(match (&app.input_mode, app.focused_input_index) {
+            (InputMode::Editing, INPUT_TITLE_INDEX) => Style::default().fg(Color::Yellow),
+            _ => Style::default(),
         })
-        .block(Block::default().borders(Borders::ALL).title("Input"));
-    f.render_widget(input, chunks[1]);
+        .block(Block::default().borders(Borders::ALL).title("Title"));
+
+    f.render_widget(title_input, inner_chunks[0]);
+
+    // Render the description input
+    let description_input = Paragraph::new(app.description_input.as_ref())
+        .style(match (&app.input_mode, app.focused_input_index) {
+            (InputMode::Editing, INPUT_DESCRIPTION_INDEX) => Style::default().fg(Color::Yellow),
+            _ => Style::default(),
+        })
+        .block(Block::default().borders(Borders::ALL).title("Description"));
+
+    f.render_widget(description_input, inner_chunks[1]);
+
+
     match app.input_mode {
         InputMode::Normal =>
             // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
             {}
 
         InputMode::Editing => {
-            // Make the cursor visible and ask ratatui to put it at the specified coordinates after rendering
-            f.set_cursor(
-                // Put cursor past the end of the input text
-                chunks[1].x + app.title_input.width() as u16 + 1,
-                // Move one line down, from the border to the input line
-                chunks[1].y + 1,
-            )
+            match app.focused_input_index {
+                INPUT_TITLE_INDEX => {
+                    f.set_cursor(
+                        chunks[1].x + app.title_input.width() as u16 + 1,
+                        chunks[1].y + 1
+                    );
+                },
+                INPUT_DESCRIPTION_INDEX => {
+                    f.set_cursor(
+                        inner_chunks[1].x + app.description_input.width() as u16 + 1,
+                        inner_chunks[1].y + 1
+                    );
+                },
+                _ => {}
+            };
         }
     }
 
