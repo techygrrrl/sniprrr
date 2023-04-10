@@ -16,10 +16,12 @@ use ratatui::{
     Frame, Terminal,
 };
 use unicode_width::UnicodeWidthStr;
+use crate::file_utils::write_messages_to_file;
 
 use crate::models::Snippet;
 
 mod models;
+mod file_utils;
 
 enum InputMode {
     Normal,
@@ -94,7 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let app = AppState::default();
     let res = run_app(&mut terminal, app);
 
-    // restore terminal
+    // restore terminal / tear down
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -110,21 +112,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: AppState) -> io::Result<()> {
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app_state: AppState) -> io::Result<()> {
     loop {
-        terminal.draw(|f| ui(f, &mut app))?;
+        terminal.draw(|f| ui(f, &mut app_state))?;
 
         if let Event::Key(key) = event::read()? {
-            match app.input_mode {
+            match app_state.input_mode {
                 InputMode::Normal => match key.code {
                     KeyCode::Char('e') => {
-                        app.focused_input_index = INPUT_TITLE_INDEX;
-                        app.input_mode = InputMode::Editing;
+                        app_state.focused_input_index = INPUT_TITLE_INDEX;
+                        app_state.input_mode = InputMode::Editing;
                     }
                     KeyCode::Char('c') => {
                         match Clipboard::new() {
                             Ok(mut clipboard) => {
-                                let selected_snippet = get_selected_snippet(&app);
+                                let selected_snippet = get_selected_snippet(&app_state);
                                 if selected_snippet.is_none() {
                                     return Ok(());
                                 }
@@ -145,56 +147,60 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: AppState) -> io::Res
                             }
                         };
                     }
-                    KeyCode::Down | KeyCode::Char('j') => app.next(),
-                    KeyCode::Up | KeyCode::Char('k') => app.previous(),
+                    KeyCode::Down | KeyCode::Char('j') => app_state.next(),
+                    KeyCode::Up | KeyCode::Char('k') => app_state.previous(),
                     KeyCode::Char('q') => return Ok(()),
                     _ => {}
                 },
                 InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
                     KeyCode::Tab => {
-                        app.focused_input_index = (app.focused_input_index + 1) % MAX_INPUT_COUNT
+                        app_state.focused_input_index = (app_state.focused_input_index + 1) % MAX_INPUT_COUNT
                     }
                     KeyCode::Enter => {
                         // If we are not on the last field, enter moves to the next field
-                        if app.focused_input_index == MAX_INPUT_COUNT - 1 {
+                        if app_state.focused_input_index == MAX_INPUT_COUNT - 1 {
                             // Last field index
                             let snippet = Snippet {
-                                title: app.title_input.clone(),
-                                description: app.description_input.clone(),
+                                title: app_state.title_input.clone(),
+                                description: app_state.description_input.clone(),
                             };
 
-                            app.messages.push(snippet);
+                            app_state.messages.push(snippet);
 
-                            app.title_input.clear();
-                            app.description_input.clear();
+                            app_state.title_input.clear();
+                            app_state.description_input.clear();
+                            app_state.input_mode = InputMode::Normal;
 
-                            app.input_mode = InputMode::Normal;
+                            // TODO: Persist to disk
+                            let json_string = serde_json::to_string::<Vec<Snippet>>(&app_state.messages).unwrap();
+
+                            write_messages_to_file(&json_string)?;
                         } else {
                             // Not the last field
                             // Move to next field
-                            app.focused_input_index = (app.focused_input_index + 1) % MAX_INPUT_COUNT
+                            app_state.focused_input_index = (app_state.focused_input_index + 1) % MAX_INPUT_COUNT
                         }
                     }
                     KeyCode::Char(c) => {
-                        match app.focused_input_index {
-                            INPUT_TITLE_INDEX => app.title_input.push(c),
-                            INPUT_DESCRIPTION_INDEX => app.description_input.push(c),
+                        match app_state.focused_input_index {
+                            INPUT_TITLE_INDEX => app_state.title_input.push(c),
+                            INPUT_DESCRIPTION_INDEX => app_state.description_input.push(c),
                             _ => {}
                         };
                     }
                     KeyCode::Backspace => {
-                        match app.focused_input_index {
+                        match app_state.focused_input_index {
                             INPUT_TITLE_INDEX => {
-                                app.title_input.pop();
+                                app_state.title_input.pop();
                             },
                             INPUT_DESCRIPTION_INDEX => {
-                                app.description_input.pop();
+                                app_state.description_input.pop();
                             },
                             _ => {}
                         };
                     }
                     KeyCode::Esc => {
-                        app.input_mode = InputMode::Normal;
+                        app_state.input_mode = InputMode::Normal;
                     }
                     _ => {}
                 },
