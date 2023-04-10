@@ -1,5 +1,6 @@
 use std::{error::Error, io};
 
+use crate::file_utils::{load_messages_from_file, write_messages_to_file};
 use arboard::Clipboard;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
@@ -16,12 +17,11 @@ use ratatui::{
     Frame, Terminal,
 };
 use unicode_width::UnicodeWidthStr;
-use crate::file_utils::{load_messages_from_file, write_messages_to_file};
 
 use crate::models::Snippet;
 
-mod models;
 mod file_utils;
+mod models;
 
 enum InputMode {
     Normal,
@@ -95,7 +95,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut app_state = AppState::default();
 
     // Load from disk
-    let messages= load_messages_from_file();
+    let messages = load_messages_from_file();
     app_state.messages = messages;
 
     let res = run_app(&mut terminal, app_state);
@@ -132,7 +132,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app_state: AppState) -> i
                         if let Some(selected) = selected {
                             app_state.messages.remove(selected);
 
-                            let json_string = serde_json::to_string::<Vec<Snippet>>(&app_state.messages).unwrap();
+                            let json_string =
+                                serde_json::to_string::<Vec<Snippet>>(&app_state.messages).unwrap();
                             write_messages_to_file(&json_string)?
                         }
                     }
@@ -167,7 +168,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app_state: AppState) -> i
                 },
                 InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
                     KeyCode::Tab => {
-                        app_state.focused_input_index = (app_state.focused_input_index + 1) % MAX_INPUT_COUNT
+                        app_state.focused_input_index =
+                            (app_state.focused_input_index + 1) % MAX_INPUT_COUNT
                     }
                     KeyCode::Enter => {
                         // If we are not on the last field, enter moves to the next field
@@ -184,13 +186,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app_state: AppState) -> i
                             app_state.description_input.clear();
                             app_state.input_mode = InputMode::Normal;
 
-                            let json_string = serde_json::to_string::<Vec<Snippet>>(&app_state.messages).unwrap();
+                            let json_string =
+                                serde_json::to_string::<Vec<Snippet>>(&app_state.messages).unwrap();
 
                             write_messages_to_file(&json_string)?;
                         } else {
                             // Not the last field
                             // Move to next field
-                            app_state.focused_input_index = (app_state.focused_input_index + 1) % MAX_INPUT_COUNT
+                            app_state.focused_input_index =
+                                (app_state.focused_input_index + 1) % MAX_INPUT_COUNT
                         }
                     }
                     KeyCode::Char(c) => {
@@ -204,10 +208,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app_state: AppState) -> i
                         match app_state.focused_input_index {
                             INPUT_TITLE_INDEX => {
                                 app_state.title_input.pop();
-                            },
+                            }
                             INPUT_DESCRIPTION_INDEX => {
                                 app_state.description_input.pop();
-                            },
+                            }
                             _ => {}
                         };
                     }
@@ -221,7 +225,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app_state: AppState) -> i
         }
     }
 }
-
 
 fn get_selected_snippet(app: &AppState) -> Option<&Snippet> {
     let selected_index = app.table_state.selected()?;
@@ -295,7 +298,6 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut AppState) {
 
     f.render_widget(description_input, inner_chunks[1]);
 
-
     match app.input_mode {
         InputMode::Normal =>
             // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
@@ -306,15 +308,15 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut AppState) {
                 INPUT_TITLE_INDEX => {
                     f.set_cursor(
                         chunks[1].x + app.title_input.width() as u16 + 1,
-                        chunks[1].y + 1
+                        chunks[1].y + 1,
                     );
-                },
+                }
                 INPUT_DESCRIPTION_INDEX => {
                     f.set_cursor(
                         inner_chunks[1].x + app.description_input.width() as u16 + 1,
-                        inner_chunks[1].y + 1
+                        inner_chunks[1].y + 1,
                     );
-                },
+                }
                 _ => {}
             };
         }

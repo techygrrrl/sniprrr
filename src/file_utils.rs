@@ -1,7 +1,7 @@
-use std::{fs, io};
+use crate::models::Snippet;
 use std::fs::DirBuilder;
 use std::io::ErrorKind::NotFound;
-use crate::models::Snippet;
+use std::{fs, io};
 
 pub fn write_messages_to_file(data: &str) -> io::Result<()> {
     let app_config_path = dirs::config_dir();
@@ -14,9 +14,7 @@ pub fn write_messages_to_file(data: &str) -> io::Result<()> {
     let app_config_path = app_config_path.unwrap();
     let app_config_path = app_config_path.join("sniprrr");
 
-    DirBuilder::new()
-        .recursive(true)
-        .create(&app_config_path)?;
+    DirBuilder::new().recursive(true).create(&app_config_path)?;
 
     let app_config_path = app_config_path.join("messages.json");
 
@@ -31,14 +29,12 @@ pub fn load_messages_from_file() -> Vec<Snippet> {
     }
 
     let app_config_path = app_config_path.unwrap();
-    let app_config_path = app_config_path
-        .join("sniprrr")
-        .join("messages.json");
+    let app_config_path = app_config_path.join("sniprrr").join("messages.json");
 
     if !app_config_path.exists() {
         return vec![];
     }
-    
+
     match fs::read_to_string(app_config_path) {
         Ok(file_contents) => {
             let snippets = serde_json::from_str::<Vec<Snippet>>(&file_contents);
