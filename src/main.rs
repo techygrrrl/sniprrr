@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let mut app = AppState::default();
+    let app = AppState::default();
     let res = run_app(&mut terminal, app);
 
     // restore terminal
@@ -183,7 +183,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: AppState) -> io::Res
                         };
                     }
                     KeyCode::Backspace => {
-                        app.title_input.pop();
+                        match app.focused_input_index {
+                            INPUT_TITLE_INDEX => {
+                                app.title_input.pop();
+                            },
+                            INPUT_DESCRIPTION_INDEX => {
+                                app.description_input.pop();
+                            },
+                            _ => {}
+                        };
                     }
                     KeyCode::Esc => {
                         app.input_mode = InputMode::Normal;
@@ -293,7 +301,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut AppState) {
         }
     }
 
-    let normal_style = Style::default().bg(Color::Blue);
+    let normal_style = Style::default().bg(Color::Rgb(0xff, 0x00, 0xff));
     let selected_style = Style::default().add_modifier(Modifier::REVERSED);
 
     // Create rows for the data
