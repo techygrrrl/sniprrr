@@ -16,7 +16,7 @@ use ratatui::{
     Frame, Terminal,
 };
 use unicode_width::UnicodeWidthStr;
-use crate::file_utils::write_messages_to_file;
+use crate::file_utils::{load_messages_from_file, write_messages_to_file};
 
 use crate::models::Snippet;
 
@@ -92,9 +92,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // create app and run it
-    let app = AppState::default();
-    let res = run_app(&mut terminal, app);
+    let mut app_state = AppState::default();
+
+    // Load from disk
+    let messages= load_messages_from_file();
+    app_state.messages = messages;
+
+    let res = run_app(&mut terminal, app_state);
 
     // restore terminal / tear down
     disable_raw_mode()?;
@@ -122,6 +126,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app_state: AppState) -> i
                     KeyCode::Char('e') => {
                         app_state.focused_input_index = INPUT_TITLE_INDEX;
                         app_state.input_mode = InputMode::Editing;
+                    }
+                    KeyCode::Delete | KeyCode::Backspace => {
+                        let selected = app_state.table_state.selected();
+                        if let Some(selected) = selected {
+                            app_state.messages.remove(selected);
+
+                            let json_string = serde_json::to_string::<Vec<Snippet>>(&app_state.messages).unwrap();
+                            write_messages_to_file(&json_string)?
+                        }
                     }
                     KeyCode::Char('c') => {
                         match Clipboard::new() {
@@ -171,7 +184,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app_state: AppState) -> i
                             app_state.description_input.clear();
                             app_state.input_mode = InputMode::Normal;
 
-                            // TODO: Persist to disk
                             let json_string = serde_json::to_string::<Vec<Snippet>>(&app_state.messages).unwrap();
 
                             write_messages_to_file(&json_string)?;
@@ -209,6 +221,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app_state: AppState) -> i
         }
     }
 }
+
 
 fn get_selected_snippet(app: &AppState) -> Option<&Snippet> {
     let selected_index = app.table_state.selected()?;
@@ -324,16 +337,14 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut AppState) {
         let title_cell = Cell::from(snippet.title.clone());
         let description_cell = Cell::from(snippet.description.clone());
 
-        Row::new(vec![title_cell, description_cell])
-            .height(height as u16)
-            .bottom_margin(1)
+        Row::new(vec![title_cell, description_cell]).height(height as u16)
     });
 
     let table = Table::new(rows)
         .header(header)
         .block(Block::default().borders(Borders::ALL).title("Snippets"))
         .highlight_style(selected_style)
-        .highlight_symbol("🦀 ")
+        // .highlight_symbol("🦀 ")
         .widths(&[
             Constraint::Percentage(50),
             Constraint::Length(30),
